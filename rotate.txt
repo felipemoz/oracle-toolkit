@@ -1,0 +1,8 @@
+
+
+find . -mtime +30 -exec ls {} \;
+
+
+find . -type f -mtime +30 | xargs rm
+find . -type f -mtime +30 -exec rm {} \;
+

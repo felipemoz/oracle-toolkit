@@ -1,0 +1,104 @@
+
+ORA-01114
+
+https://asktom.oracle.com/pls/asktom/f?p=100:11:0::::P11_QUESTION_ID:34014729642755
+
+Here, I'll let you tech edit a new section of "expert one on one Oracle" 2cnd edition :)
+
+Temp Files
+
+Temporary data files (temp files) in Oracle are a special type of data file. Oracle will use 
+temporary files to store the intermediate results of a large sort operation, hash operations, 
+global temporary table data, or result set, when there is insufficient memory to hold it all in 
+RAM. Permanent data objects, such as a table or an index, will never be stored in a temporary file, 
+but the contents of a temporary table or index would be. So, you?ll never create your application 
+tables in a temporary data file, but you might store data there when you use a temporary table.
+
+Temporary files are treated in a special way by Oracle. Normally, each and every change you make to 
+an object will be recorded in the redo logs ? these transaction logs can be replayed at a later 
+date in order to ?redo a transaction?. We might do this during recovery from failure for example. 
+Temporary files are excluded from this process. Temporary files never have redo generated for them, 
+although they do have UNDO generated (and thus there will be REDO generated working with temporary 
+tables since UNDO is always protected by REDO as we will see in detail in the chapter on Redo and 
+Undo), when used for global temporary tables, in the event you decide to rollback some work you 
+have done in your session. Your DBA never needs to back up a temporary data file, and in fact if 
+they do they are only wasting their time, as you can never restore a temporary data file.
+
+It is recommended that your database be configured with locally managed temporary tablespaces. 
+You?ll want to make sure your DBA uses a CREATE TEMPORARY TABLESPACE command. You do not want them 
+to just alter a permanent tablespace to a temporary one, as you do not get the benefits of temp 
+files that way. 
+One of the nuances of true temporary files is that if the operating system permits it ? the 
+temporary files will be created ?sparse?.  That is, they will not actually consume disk storage 
+until they need to.  You can see that easily using this example (on Red Hat Linux in this case)
+
+ops$tkyte@ORA10G> !df
+Filesystem           1K-blocks      Used Available Use% Mounted on
+/dev/hda2             74807888  41999488  29008368  60% /
+/dev/hda1               102454     14931     82233  16% /boot
+none                   1030804         0   1030804   0% /dev/shm
+ 
+ops$tkyte@ORA10G> create temporary tablespace temp_huge
+  2  tempfile '/tmp/temp_huge' size 2048m
+  3  /
+ 
+Tablespace created.
+ 
+ops$tkyte@ORA10G> !df
+Filesystem           1K-blocks      Used Available Use% Mounted on
+/dev/hda2             74807888  41999616  29008240  60% /
+/dev/hda1               102454     14931     82233  16% /boot
+none                   1030804         0   1030804   0% /dev/shm
+
+NOTE: df is a Unix command to show ?disk free?.  This command showed that I have 29,008,368 K free 
+in the file system containing /tmp before I added a 2gig tempfile to the database.  After I added 
+that file, I had 29,008,240  K free in the file system.
+
+
+Apparently it only took 128 K of storage to hold that file.  But if we ?ls? it:
+
+ops$tkyte@ORA10G> !ls -l /tmp/temp_huge
+-rw-rw----    1 ora10g   ora10g   2147491840 Jan  2 16:34 /tmp/temp_huge
+
+It appears to be a normal ?2 gig? file.  But it is only consuming some 128 K of storage.  The 
+reason I point this out is because I would be able to actually create hundreds of these two 
+gigabyte temporary files ? even though I have roughly 29 GIG free.  Sounds great ? free storage for 
+all!  The problem is as we started to use these temporary files and they started expanding out ? 
+you would rapidly hit errors stating ?no more space?.  Since the space is allocated as needed, you 
+stand a definite chance of running out of room (especially if after you create the tempfiles 
+someone else fills up the file system with other stuff).
+
+How to solve this differs from OS to OS, on Linux some of the options are to use ?dd? to fill the 
+file or use ?cp? to create a non-sparse file.  For example:
+
+ops$tkyte@ORA10G> !cp --sparse=never /tmp/temp_huge /tmp/temp_huge2
+ 
+ops$tkyte@ORA10G> !df
+Filesystem           1K-blocks      Used Available Use% Mounted on
+/dev/hda2             74807888  44099336  26908520  63% /
+/dev/hda1               102454     14931     82233  16% /boot
+none                   1030804         0   1030804   0% /dev/shm
+ 
+ops$tkyte@ORA10G> drop tablespace temp_huge;
+ 
+Tablespace dropped.
+ 
+ops$tkyte@ORA10G> create temporary tablespace temp_huge
+  2  tempfile '/tmp/temp_huge2' reuse;
+ 
+Tablespace created.
+ 
+ops$tkyte@ORA10G> !df
+Filesystem           1K-blocks      Used Available Use% Mounted on
+/dev/hda2             74807888  44099396  26908460  63% /
+/dev/hda1               102454     14931     82233  16% /boot
+none                   1030804         0   1030804   0% /dev/shm
+
+After copying the sparse 2 G file to ?/tmp/temp_huge2? and creating the temporary tablespace using 
+that tempfile with the REUSE option ? we are assured that tempfile has allocated all of its file 
+system space and our database actually has 2 G of temporary space to work with.
+
+Note: In my experience Windows NTFS does not do ?sparse? files, this applies to Unix/Linux 
+variants.  On the plus side ? if you have to create a 10 G temporary tablespace on Unix/Linux and 
+have tempfile support, you?ll find it goes very fast (instantaneous) ? but just make sure you have 
+10 G free and reserve it in your mind for 

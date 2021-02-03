@@ -1,0 +1,25 @@
+
+rman target / catalog rman/powerbk@rman
+
+
+
+CROSSCHECK BACKUP;
+CROSSCHECK COPY;
+CROSSCHECK backup of database; 
+CROSSCHECK backup of controlfile;
+
+
+CROSSCHECK archivelog all;
+delete expired archivelog all;
+delete noprompt ARCHIVELOG UNTIL TIME 'SYSDATE-8';
+
+list backup of controlfile;
+list backupset;
+
+
+select current_scn from v$database;
+
+select scn_to_timestamp('4,7380E+12') from dual;
+
+
+55133-55175
